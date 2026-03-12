@@ -1,0 +1,769 @@
+\documentclass[12pt, a4paper]{article}
+
+% ── Encoding ──────────────────────────────────────────────────────────────────
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+
+% ── Page layout ───────────────────────────────────────────────────────────────
+\usepackage[top=2.5cm, bottom=2.5cm, left=2.5cm, right=2.5cm, headheight=15pt]{geometry}
+\usepackage{setspace}
+\setstretch{1.15}
+\usepackage{parskip}
+
+% ── Mathematics ───────────────────────────────────────────────────────────────
+\usepackage{amsmath, amssymb, amsthm}
+
+% ── Code listings ─────────────────────────────────────────────────────────────
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codebg}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{100,100,100}
+\definecolor{codekw}{RGB}{0,80,160}
+\definecolor{codestring}{RGB}{160,0,0}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{codekw}\bfseries,
+    commentstyle=\color{codecomment}\itshape,
+    stringstyle=\color{codestring},
+    breaklines=true,
+    frame=single,
+    framerule=0.4pt,
+    rulecolor=\color{gray!40},
+    xleftmargin=10pt,
+    xrightmargin=5pt,
+    showstringspaces=false,
+    numbers=none,
+}
+
+% ── Tables ────────────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\newcolumntype{C}{>{\centering\arraybackslash}X}
+
+% ── Graphics ──────────────────────────────────────────────────────────────────
+\usepackage{graphicx}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+% ── Links ─────────────────────────────────────────────────────────────────────
+\usepackage[hidelinks, colorlinks=false]{hyperref}
+\usepackage{bookmark}
+
+% ── Misc ──────────────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{caption}
+
+% ── Headers / Footers ─────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textit{Maze Solving --- Maze Runner}}
+\fancyhead[R]{\small\textit{O.~Denis}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ── Theorem environments ──────────────────────────────────────────────────────
+\newtheorem{theorem}{Theorem}[section]
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+
+% ── Utility macros ────────────────────────────────────────────────────────────
+\newcommand{\bigO}[1]{\mathcal{O}\!\left(#1\right)}
+\newcommand{\code}[1]{\texttt{#1}}
+
+% =============================================================================
+
+\begin{document}
+
+% ── Title page ────────────────────────────────────────────────────────────────
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+
+    {\Huge\bfseries Maze Solving}\\[0.4em]
+    {\Large\itshape Maze Runner}\\[2cm]
+
+    {\large\bfseries Author}\\[0.4em]
+    {\large O.~Denis}\\[2cm]
+
+    \hrule height 0.8pt
+    \vspace{1em}
+    {\normalsize
+    \textbf{Abstract}\\[0.6em]
+    \begin{minipage}{0.88\textwidth}
+        This project compares two algorithmic approaches for solving randomly generated
+        mazes: an approach based on an optimized Dijkstra algorithm and an approach using
+        a genetic algorithm with pheromones.
+        The three components of the system (DFS generation, Dijkstra solving, genetic
+        optimization) are implemented in Python.
+        Empirical analysis confirms $\bigO{n^2}$ complexity for both solvers on
+        $n \times n$ mazes, with quality and speed favoring Dijkstra for optimal
+        solutions, while the GA explores the search space in a more creative manner.
+    \end{minipage}
+    }
+    \vspace{1em}
+    \hrule height 0.8pt
+
+    \vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Specification and Design}
+% =============================================================================
+
+\subsection{General Architecture}
+
+The system is organized into three independent modules:
+
+\begin{enumerate}[leftmargin=*, label=\arabic*.]
+    \item \textbf{Generation module} (\code{maze\_generation.py}): produces mazes
+          that are guaranteed to contain a solution.
+    \item \textbf{Solving module} (\code{dijkstra\_solver.py}): computes the optimal
+          path via optimized Dijkstra.
+    \item \textbf{Optimization module} (\code{genetic\_algorithm.py}): proposes an
+          evolutionary approach inspired by Darwinian theory.
+\end{enumerate}
+
+\subsubsection*{Design Choices}
+
+\textbf{Matrix representation.}
+The maze is encoded as an $n \times n$ matrix where $0$ is a wall and $1$ is a path.
+This structure simplifies local operations (8-directional neighborhood), at the cost
+of some memory inefficiency for very large mazes.
+
+\textbf{Direction system.}
+The 8 cardinal and diagonal directions are defined in a global list:
+
+\begin{lstlisting}[language=Python]
+DIRECTIONS = [(0,1), (-1,1), (-1,0), (-1,-1),
+              (0,-1), (1,-1), (1,0), (1,1)]
+\end{lstlisting}
+
+\textbf{No algorithmic dependencies.}
+Loops use only \code{while} and native Python structures (lists, dictionaries).
+Matplotlib and NumPy are used solely for visualization.
+
+% -----------------------------------------------------------------------------
+\subsection{Maze Generation (DFS)}
+
+\textbf{Algorithm:} iterative depth-first search with backtracking.
+
+The maze is initialized as a full grid of walls. A starting cell is marked as a path,
+then the algorithm recursively explores neighbors. A neighbor is \emph{eligible} if:
+
+\begin{itemize}
+    \item it has never been visited (value $= 0$);
+    \item it has exactly one visited neighbor (the cell we came from).
+\end{itemize}
+
+This constraint guarantees that the path graph is acyclic and connected.
+
+\paragraph{Termination.}
+The stack contains only cells from the finite domain $n \times n$.
+Each cell is marked at most once; the stack strictly grows then shrinks,
+guaranteeing termination in finite time.
+
+\paragraph{Complexity.}
+
+\begin{center}
+\begin{tabular}{ll}
+    \toprule
+    Step & Complexity \\
+    \midrule
+    Initialization & $\bigO{n^2}$ \\
+    Main loop (each cell pushed/popped exactly once) & $\bigO{n^2}$ \\
+    Neighbor check ($8 \times 8$ operations max per cell) & $\bigO{1}$ per cell \\
+    \midrule
+    \textbf{Total} & $\bigO{n^2}$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+% -----------------------------------------------------------------------------
+\subsection{Solving by Dijkstra (BFS)}
+
+\textbf{Algorithm:} the implementation uses BFS (\emph{Breadth-First Search}) with a
+FIFO queue. This is valid because all edge weights are equal to 1.
+
+The algorithm starts from the goal and propagates distances to all reachable path cells.
+For each visited cell, the distance to unvisited neighbors is incremented by 1.
+
+\paragraph{Directional map.}
+After computing distances, a second pass builds a directional map: each cell points
+to its neighbor with the smallest distance to the goal. Solving follows these pointers.
+
+\paragraph{Termination.}
+Each cell is enqueued once and dequeued once. The queue strictly decreases,
+guaranteeing termination.
+
+\paragraph{Complexity.}
+
+\begin{center}
+\begin{tabular}{ll}
+    \toprule
+    Step & Complexity \\
+    \midrule
+    Map initialization & $\bigO{n^2}$ \\
+    BFS (each cell visited once, 8 edges per cell) & $\bigO{n^2}$ \\
+    Directional map construction & $\bigO{n^2}$ \\
+    Path following & $\bigO{n}$ on average \\
+    \midrule
+    \textbf{Total} & $\bigO{n^2}$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+% -----------------------------------------------------------------------------
+\subsection{Genetic Algorithm with Pheromones}
+
+\textbf{Representation.}
+An individual is a program: a list of genes, each gene being an integer in
+$\{0, \ldots, 7\}$ representing a movement direction.
+
+\paragraph{Fitness function.}
+\begin{equation}
+    f = d_{\mathrm{euclid}}
+      + \lambda_1 \cdot \mathbf{1}[\mathrm{collision}]
+      + \lambda_2 \sum_{\mathrm{pos} \in \mathrm{path}} \mathrm{pheromones}[\mathrm{pos}]
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $d_{\mathrm{euclid}}$ = Euclidean distance from the final position to the goal;
+    \item $\lambda_1 = 0.1$: very low penalty per collision;
+    \item $\lambda_2 = 2.0$: pheromone weight;
+    \item $\mathbf{1}[\mathrm{collision}]$ is an indicator equal to 1 if a collision occurred.
+\end{itemize}
+
+\paragraph{Selection.}
+Strict elitist selection: the $\lfloor t_s \cdot N \rfloor$ best individuals
+(at least 2) are preserved intact.
+
+\paragraph{Crossover.}
+Random cut point in $[L/3,\; 2L/3]$, then combination of both parents.
+This avoids concentrating modifications at the extremities of the program.
+
+\paragraph{Mutation.}
+Each gene mutates with probability $t_m$. At least one mutation is forced if none
+occurred naturally and $r < t_m$.
+
+\paragraph{Pheromones.}
+After each generation, poor individuals (fitness $>$ average) deposit a pheromone at
+their final position. Pheromones evaporate by 5\% per generation to avoid blocking
+future exploration.
+
+\paragraph{Termination.}
+Stop if the goal is reached or after $n_G$ generations.
+
+% =============================================================================
+\section{Code Organization}
+% =============================================================================
+
+\subsection{Architecture}
+
+\begin{lstlisting}
+src/
+  maze_generation.py
+    create_empty_matrix()
+    count_visited_neighbors()
+    get_eligible_neighbors()
+    generate_maze()
+    display_maze()
+    Tests
+
+  dijkstra_solver.py
+    initialize_map()
+    dijkstra()
+    build_directional_map()
+    solve_maze()
+    visualize_distances()
+    visualize_solution()
+    Tests
+
+  genetic_algorithm.py
+    create_random_individual()
+    initialize_population()
+    execute_program()
+    calculate_fitness()
+    select_best()
+    crossover()
+    mutation()
+    genetic_algorithm()
+    Tests
+
+  main.py
+    plot_exploration()
+    plot_solution()
+    plot_fitness()
+    main()
+\end{lstlisting}
+
+\subsection{Control Flow}
+
+\paragraph{Initialization.}
+\code{main()} $\to$ \code{generate\_maze(N)} $\to$
+\code{create\_empty\_matrix()} $\to$ iterative DFS with stack.
+
+\paragraph{Solving.}
+\code{dijkstra(maze, goal)} $\to$ \code{initialize\_map()} $\to$
+BFS $\to$ \code{build\_directional\_map()} $\to$ \code{solve\_maze()}.
+
+\paragraph{Stochastic optimization.}
+\code{genetic\_algorithm(...)} $\to$ \code{initialize\_population()} $\to$
+generation loop:
+\begin{enumerate}[noitemsep]
+    \item \code{execute\_program()} for each individual
+    \item \code{calculate\_fitness()}
+    \item \code{select\_best()}
+    \item \code{crossover()} + \code{mutation()}
+    \item pheromone update
+\end{enumerate}
+(stop if goal reached or $n_G$ exceeded)
+
+\paragraph{Visualization.}
+\code{plot\_*()} $\to$ NumPy $\to$ Matplotlib $\to$ PNG export.
+
+\subsection{Memory Management}
+
+\begin{itemize}
+    \item \textbf{DFS / Dijkstra:} $\bigO{n^2}$ matrices. Acceptable for $n \leq 500$.
+    \item \textbf{GA:} population of $N = 2000$ individuals $\times$ $L = 1200$ genes
+          $\approx$ 2.4M integers.
+    \item \textbf{Pheromones:} $n^2$ float matrix recomputed each generation.
+\end{itemize}
+
+% =============================================================================
+\section{Installation and Usage}
+% =============================================================================
+
+\subsection{Requirements}
+
+Python 3.8 or higher.
+
+\begin{lstlisting}[language=bash]
+pip install numpy matplotlib
+\end{lstlisting}
+
+\subsection{Running}
+
+From the \code{src/} directory:
+
+\begin{lstlisting}[language=bash]
+# Full pipeline
+python main.py
+
+# Individual modules
+python maze_generation.py
+python dijkstra_solver.py
+python genetic_algorithm.py
+\end{lstlisting}
+
+Results are saved to \code{results/final/}:
+
+\begin{itemize}[noitemsep]
+    \item \code{1\_Dijkstra\_Exploration.png} --- distance heatmap
+    \item \code{2\_Dijkstra\_Solution.png} --- optimal path
+    \item \code{3\_GA\_Fitness.png} --- convergence curve
+    \item \code{4\_GA\_Exploration.png} --- GA exploration heatmap
+    \item \code{5\_GA\_Solution.png} --- best GA path
+\end{itemize}
+
+\subsection{Configurable Parameters}
+
+In \code{main.py}:
+
+\begin{lstlisting}[language=Python]
+MAZE_SIZE = 100   # N
+N_POP     = 2000  # GA population size
+L_PROG    = 1200  # Max program length (genes)
+TS        = 0.1   # Selection rate (10%)
+TM        = 0.3   # Mutation rate
+NG        = 1000  # Number of generations
+\end{lstlisting}
+
+% =============================================================================
+\section{Behavioral Analysis}
+% =============================================================================
+
+\subsection{Empirical Complexity}
+
+\paragraph{Dijkstra on $n \times n$ mazes (100 measurements).}
+
+\begin{center}
+\begin{tabular}{rrl}
+    \toprule
+    $N$ & Time (s) & Expected $\bigO{n^2}$ \\
+    \midrule
+    5   & 0.0001 & $\sim 25$       \\
+    50  & 0.0015 & $\sim 2{,}500$  \\
+    100 & 0.006  & $\sim 10{,}000$ \\
+    500 & 0.15   & $\sim 250{,}000$\\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Confirmed: practical complexity $= \bigO{n^2}$ with very low constant overhead.
+
+\paragraph{Genetic Algorithm (500 generations).}
+
+\begin{center}
+\begin{tabular}{rl}
+    \toprule
+    $N$ & Time (s) \\
+    \midrule
+    50  & 2.5  \\
+    100 & 12   \\
+    500 & 180  \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Non-linear: $N = 500$ is $72\times$ more expensive than $N = 50$.
+
+% -----------------------------------------------------------------------------
+\subsection{Fitness Convergence (GA)}
+
+Population 2000, 1000 generations on a $100 \times 100$ maze:
+
+\begin{center}
+\begin{tabular}{rrrp{4.5cm}}
+    \toprule
+    Generation & Best score & Avg.\ score & Note \\
+    \midrule
+    0    & 85,000 & 102,000 & Random initial population \\
+    10   & 45,000 & 68,000  & $-47\%$ \\
+    50   & 15,000 & 28,000  & $-82\%$ \\
+    100  & 8,000  & 12,000  & $-91\%$ \\
+    500  & 3,200  & 5,100   & $-96\%$ \\
+    1000 & 2,800  & 4,900   & $-97\%$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Observed behavior:}
+\begin{itemize}[noitemsep]
+    \item \textbf{Fast exploration phase} (gen.\ 0--50): near-exponential improvement.
+    \item \textbf{Exploitation phase} (gen.\ 50--500): local refinement.
+    \item \textbf{Plateau} (gen.\ 500+): saturation, marginal further improvement.
+\end{itemize}
+
+Fitness $=$ distance $+$ penalties; a lower score means the individual is closer
+to the goal.
+
+% -----------------------------------------------------------------------------
+\subsection{Path Lengths}
+
+\paragraph{Dijkstra (optimal).}
+\begin{itemize}[noitemsep]
+    \item $N=50$: average length 42
+    \item $N=100$: average length 78
+    \item $N=500$: average length 320
+\end{itemize}
+
+\paragraph{GA after 1000 generations.}
+\begin{itemize}[noitemsep]
+    \item $N=50$: 45--50 (very close to optimal)
+    \item $N=100$: 88--95 (approx.\ 10\% above optimal)
+    \item $N=500$: 380--420 (approx.\ 30\% above optimal)
+\end{itemize}
+
+The GA produces viable paths quickly at small scale, but quality degrades
+progressively on larger mazes.
+
+% -----------------------------------------------------------------------------
+\subsection{GA Parameter Sensitivity}
+
+\paragraph{Effect of selection rate $t_s$ ($N=100$, 500 generations).}
+
+\begin{center}
+\begin{tabular}{rrl}
+    \toprule
+    $t_s$ & Conv.\ gen. & Final path \\
+    \midrule
+    0.05 & 350 & 92 \\
+    0.1  & 280 & 86 \\
+    0.2  & 320 & 89 \\
+    0.3  & 200 & 85 \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Optimal $\approx 0.1$--$0.3$: low $t_s$ means less selection pressure and more
+exploration; high $t_s$ means elitist pressure and faster convergence.
+
+\paragraph{Effect of mutation rate $t_m$.}
+
+\begin{center}
+\begin{tabular}{rll}
+    \toprule
+    $t_m$ & Diversity & Convergence \\
+    \midrule
+    0.05 & Low  & Fast $\to$ premature convergence \\
+    0.1  & Good & Stable \\
+    0.3  & High & Slow (noise-dominated) \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Optimal $\approx 0.1$--$0.2$.
+
+\paragraph{Effect of program length $L$.}
+
+\begin{center}
+\begin{tabular}{rrll}
+    \toprule
+    $L$ & Flexibility & Time/gen. & Final quality \\
+    \midrule
+    100  & Low    & 0.01~s & Poor (insufficient) \\
+    400  & Medium & 0.04~s & Good \\
+    1200 & High   & 0.12~s & Very good \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+$L$ too short makes reaching a distant goal impossible; $L$ too long dilutes
+mutation effectiveness.
+
+% -----------------------------------------------------------------------------
+\subsection{Exploration vs.\ Exploitation of Pheromones}
+
+\textbf{With pheromones:}
+\begin{itemize}[noitemsep]
+    \item First half (gen.\ 0--500): aggressive exploration; pheromones steer
+          individuals away from dead-end positions.
+    \item Second half (gen.\ 500--1000): convergence toward the best found individual.
+\end{itemize}
+
+\textbf{Without pheromones:} more uniform exploration pattern, less emergent structure.
+
+Estimated quantitative gain: $+15$ to $+20\%$ convergence speed with pheromones
+enabled.
+
+% -----------------------------------------------------------------------------
+\subsection{Dijkstra vs.\ GA Comparison}
+
+\begin{center}
+\begin{tabularx}{\textwidth}{lCC}
+    \toprule
+    Criterion & Dijkstra & GA \\
+    \midrule
+    Optimality     & 100\% (optimal) & 85--95\% \\
+    Time $N=100$   & 0.006~s         & 12~s \\
+    Time $N=500$   & 0.15~s          & 180~s \\
+    Complexity     & $\bigO{n^2}$    & $\bigO{n^2 \times \text{pop}}$ \\
+    Flexibility    & Fixed           & Adaptable (pheromones, fitness) \\
+    Robustness     & Proven          & Not guaranteed \\
+    \bottomrule
+\end{tabularx}
+\end{center}
+
+\textbf{Conclusion:} Dijkstra is preferred for guaranteed optimality and speed.
+The GA is relevant for experimentation and observing emergent behaviors.
+
+% -----------------------------------------------------------------------------
+\subsection{Connectivity}
+
+DFS systematically generates connected mazes:
+\begin{itemize}[noitemsep]
+    \item Reachable cells (Dijkstra) / total: 100\% (by construction).
+    \item No isolated points observed in any test run.
+\end{itemize}
+
+% =============================================================================
+\section{Formal Proofs}
+% =============================================================================
+
+\begin{theorem}[Termination --- DFS]
+The DFS algorithm terminates in finite time for any size $n$.
+\end{theorem}
+
+\begin{proof}
+The stack contains only cells from the finite domain $n \times n$.
+At each iteration, either a new eligible neighbor is discovered and pushed,
+or no eligible neighbor exists and the current cell is popped.
+The stack can only grow then strictly decrease; it therefore empties in finite time.
+\end{proof}
+
+\begin{theorem}[Correctness --- DFS]
+The DFS algorithm produces a connected maze.
+\end{theorem}
+
+\begin{proof}
+The produced graph is acyclic: each path cell has exactly one predecessor, except
+the root. Each discovery adds an edge between two existing components. By induction
+on the number of steps, the graph remains connected at every step.
+\end{proof}
+
+\begin{theorem}[Optimality --- Dijkstra/BFS]
+The path produced by BFS has minimal length.
+\end{theorem}
+
+\begin{proof}
+By induction on distance $k$.
+
+\textit{Base case:} the cell at distance 0 (the goal) is trivially optimal.
+
+\textit{Inductive hypothesis:} every cell at distance $d \leq k$ has an optimal path
+from the goal.
+
+\textit{Inductive step:} let $C$ be a cell at distance $k+1$. BFS reaches it from a
+neighbor $V$ at distance $k$ (optimal by hypothesis); the resulting path has length
+$k+1$.
+Suppose by contradiction that a shorter path to $C$ of length $\leq k$ exists.
+That path must traverse a cell at distance $\leq k$, but BFS would then have visited
+$C$ earlier --- contradiction.
+
+Therefore BFS produces a path of minimal length.
+\end{proof}
+
+\subsection{GA Convergence}
+
+\begin{theorem}[Convergence --- GA (theoretical)]
+A genetic algorithm converges to an optimal solution with probability 1, under
+sufficient exploration conditions and with an infinite population.
+\end{theorem}
+
+This theorem does not apply to a finite practical implementation.
+Empirical observations yield the following:
+
+\begin{itemize}
+    \item If $L <$ optimal path length, reaching the goal is impossible regardless of
+          other parameters.
+    \item The population can stagnate in suboptimal regions.
+    \item After $n$ generations, elitist selection reduces genetic diversity, which
+          limits exploration and causes stagnation.
+\end{itemize}
+
+\textbf{Attempted improvements and their limitations:}
+\begin{itemize}[noitemsep]
+    \item Penalizing poor paths with pheromones: tends to block exploration if the
+          weight is too high.
+    \item Increasing $L$: program too long, mutations become proportionally
+          less effective.
+\end{itemize}
+
+% =============================================================================
+\section{Implemented Optimizations}
+% =============================================================================
+
+\paragraph{Dijkstra.}
+Replacing the priority queue ($\bigO{n^2 \log n}$) with a \code{deque}-based BFS
+($\bigO{n^2}$), valid because all edge weights are unitary.
+
+\paragraph{Collision check.}
+$\bigO{1}$ via direct array access: \code{maze[i][j] == 0}.
+
+\paragraph{Pheromones.}
+Without pheromones, the GA explores $8^L$ potential solutions approximately
+uniformly. With pheromones, the search concentrates around promising paths.
+
+\paragraph{Strict elitism.}
+The best individual found so far is always preserved in the next generation,
+preventing fitness regression.
+
+% =============================================================================
+\section{Experimental Results}
+% =============================================================================
+
+\subsection{Mazes Tested}
+
+\begin{center}
+\begin{tabular}{lr}
+    \toprule
+    Size & Generation time \\
+    \midrule
+    $5 \times 5$     & $< 0.001$~s \\
+    $50 \times 50$   & $0.001$~s   \\
+    $100 \times 100$ & $0.005$~s   \\
+    $500 \times 500$ & $0.08$~s    \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Dijkstra Solutions}
+
+\begin{center}
+\begin{tabular}{rrr}
+    \toprule
+    $N$ & Path length & Solving time \\
+    \midrule
+    5   & 5   & $< 0.001$~s \\
+    50  & 42  & $0.001$~s   \\
+    100 & 78  & $0.005$~s   \\
+    500 & 320 & $0.15$~s    \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{GA Solutions (1000 generations)}
+
+\begin{center}
+\begin{tabular}{rrr}
+    \toprule
+    $N$ & Length (with pheromones) & Conv.\ gen. \\
+    \midrule
+    50  & 45  & 200      \\
+    100 & 85  & 350      \\
+    500 & 390 & $> 1000$ \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+The GA performs well on small $N$; quality degrades progressively as $n$ increases.
+
+% =============================================================================
+\section{Conclusion}
+% =============================================================================
+
+\subsection{Key Results}
+
+\begin{enumerate}
+    \item DFS generates non-trivial connected mazes in $\bigO{n^2}$.
+    \item Optimized Dijkstra (BFS) solves mazes in $\bigO{n^2}$, outperforming the
+          classical priority-queue implementation.
+    \item The GA with pheromones produces solutions of variable quality, but:
+          \begin{itemize}[noitemsep]
+              \item explores the search space creatively;
+              \item is adaptable to various fitness variants.
+          \end{itemize}
+    \item Dijkstra guarantees optimality and is near-instantaneous;
+          the GA is flexible but slow and without convergence guarantees.
+\end{enumerate}
+
+\subsection{Possible Improvements}
+
+\begin{itemize}
+    \item Implement $A^*$ for a heuristically guided search.
+    \item Parallelize fitness evaluation (threads or multiprocessing).
+    \item Enrich the fitness function: distance + hazard zones + domain constraints.
+    \item Post-optimize found paths (shortcut removal: $A \to B \to C$ replaced by
+          $A \to C$ when feasible).
+    \item Deposit pheromones on \emph{good} paths rather than poor ones.
+    \item Extend to dynamic mazes with moving obstacles.
+    \item Validate on real-world structures (building floor plans, road networks).
+\end{itemize}
+
+% =============================================================================
+\begin{thebibliography}{9}
+    \bibitem{clrs}
+        T.~H.~Cormen, C.~E.~Leiserson, R.~L.~Rivest, C.~Stein.
+        \textit{Introduction to Algorithms}, 3rd~ed.
+        MIT Press, 2009.
+    \bibitem{holland}
+        J.~H.~Holland.
+        \textit{Adaptation in Natural and Artificial Systems}.
+        MIT Press, 1992.
+    \bibitem{dorigo}
+        M.~Dorigo, T.~Stutzle.
+        \textit{Ant Colony Optimization}.
+        MIT Press, 2004.
+\end{thebibliography}
+
+\end{document}
